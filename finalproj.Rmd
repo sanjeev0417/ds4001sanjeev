@@ -1,0 +1,477 @@
+---
+title: "Final Project"
+author: "Sanjeev Kumar, Ayushi Ambhore, Lee Corbin"
+date: "12/08/2020"
+output: 
+   html_document:
+    self_contained: false
+    toc: TRUE
+    theme: journal
+    toc_float: TRUE
+    toc_depth: 4
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, highlight=FALSE)
+```
+
+```{r, message=FALSE, warning=FALSE, echo=FALSE}
+library(googleVis)
+library(tidyverse)
+op <- options(gvis.plot.tag='chart')
+```
+
+```{r, message=FALSE,warning=FALSE, echo=FALSE}
+#install.packages("tidyverse")
+#install.packages("knitr")
+#nstall.packages("ggthemes")
+library(ggthemes)
+#install.packages('plotly')
+library(plotly)
+library(knitr)
+#library(googleVis)
+library(dplyr)
+library(ggplot2)
+#install.packages("corrplot")
+library(corrplot)
+require(datasets)
+library(googleVis)
+library(tidyverse)
+#install.packages("plyr")
+library(plyr)
+library(randomForest)
+library(rio)
+library(caret)
+library(ROCR)
+library(rpart)
+#install.packages("pscyh")
+library(psych)
+library(pROC)
+#install.packages("rpart.plot")
+library(rpart.plot)
+#install.packages("rattle")
+library(rattle)
+```
+
+### Question and Background Information
+
+The dataset we are using for our final project is the World Happiness Report for 2020 (reference 2). The World Happiness Report 2020 is a landmark survey of the state of global happiness that ranks 153 countries by how happy their citizens perceive themselves to be. These reports have been published annually since 2012, showing that the quality of people’s lives can be coherently and reliably assessed by a variety of subjective well-being measures such as life expectancy and GDP per capita, collectively referred to as “happiness”.
+
+The Gallup World Poll asked individuals for a score on a ladder from 0-10 if they were happy, if they had someone to count on (either 0 or 1), if they were satisfied or dissatisfied with their freedom to choose what they did with their life, if they've donated money to a charity in the past month, and if they perceived corruption within their government. The logged GDP per capita and life expectancy were extracted from the World Development Indicators (WDI) and the World Health Organization’s (WHO) Global Health Observatory data repository respectively.
+
+Each row is one of the 153 countries and each column describes different factors that contribute in evaluating the happiness of each country. The factors used here are:
+
+* Ladder Score - The Happiness Score for the Country; based on answers to the main life evaluation question asked in the Gallup World Poll 
+* GDP per capita - Logged GDP per capita in purchasing power parity (PPP) at constant 2011 international dollar prices
+* Healthy Life Expectancy - The average life expectancy age
+* Social support - Social support (or having someone to count on in times of trouble)
+* Freedom to make life choices - The national average of responses to the GWP question “Are you satisfied or dissatisfied with your freedom to choose what you do with your life?”
+* Generosity - The residual of regressing national average in response to the GWP question “Have you donated money to a charity in the past month?”
+* Corruption Perception - The national average of the survey responses to two questions in the GWP: “Is corruption widespread throughout the government or not” and “Is corruption widespread within businesses or not?” The overall perception is just the average of the two 0-or-1 responses. 
+
+While this dataset includes key variables and information needed to assess what factors have the most impact on the happiness level, not much in-depth research has been done to explore this question. One research article that was found (reference 3) used a correlation matrix to plot each factor and its correlation with happiness. They found that the Economic GDP score tends to have the biggest impact on happiness score and the Health score has the second biggest impact. Other sources (reference 4) also use a correlation matrix to assess the same question.
+
+```{r, out.width='70%', out.height='70%', fig.align='center', fig.cap="Correlation Matrix", echo=FALSE}
+#knitr::include_graphics('corrmat.png')
+```
+
+The question that we are trying to answer is similar: what factors have the most impact on an individual’s happiness level? While we want to answer this question, we want to do so by taking previous research and using more in-depth techniques, such as machine learning. We want to answer this question in order to help governments, organizations, and civil society use the respective happiness indicators to inform policy-making decisions. We were also personally interested in seeing what factors have the most weight to understand the way people interact with the world and their interpretation of “happiness.” In a time like this where everything is changing, it is vital to utilize the data present to us and make the changes needed to ensure the happiness of the people in the world. 
+
+### Exploratory Data Analysis{.tabset}
+```{r, echo=FALSE, warning=FALSE, message=FALSE, echo=FALSE}
+# Reading in file
+Happiness_Report <- read.csv("WHR20_DataForFigure2.1.csv")
+
+Happiness_Report <- Happiness_Report %>% select(Country.name, Regional.indicator, Ladder.score, Logged.GDP.per.capita,
+               Social.support, Healthy.life.expectancy, Freedom.to.make.life.choices,
+               Generosity, Perceptions.of.corruption)
+
+```
+
+#### Correlation matrix
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+
+
+newdata <- Happiness_Report[c(-1, -2)]
+
+corrmatrix <- corrplot(cor(newdata),
+         method="color",
+         sig.level = 0.01, insig = "blank",
+         addCoef.col = "black", 
+         tl.srt=45, 
+         type="upper"
+         )
+
+```
+
+* The results of this showed that the 3 most important variables to the happiness level were GDP per capita, social support, and life expectancy, as stated in our initial hypothesis
+* We used these results to make additional numerical/graphical summaries to research the factors more individually
+
+#### Happiness boxplot 
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(Happiness_Report, aes(x = Regional.indicator, y = Ladder.score)) + 
+     geom_boxplot() +
+        theme(axis.text.x = element_text(angle = 90)) +
+     labs(title = "5 Number Summary of Happiness Levels for Each Region", 
+          x = "Region", y = "Happiness Level") +
+     theme(plot.title=element_text(face="bold", size=13), 
+              axis.title.y=element_text(size=10), 
+              axis.title.x=element_text(size=10)) 
+```
+
+* We conducted this boxplot to gain additional information on what areas of the world were happier to be able to discern certain characteristics that these regions have
+* **North America/ANZ and Western Europe had the highest average happiness rating, while South Asia and Sub-Saharan Africa were among the lowest**
+
+#### Heatmap of happiness around the world
+```{r results='asis', tidy=FALSE, warning=FALSE, message=FALSE, echo=FALSE, out.width='50%', out.height='50%'}
+
+#World map of happiness
+
+Happiness_Report <- data.frame(Happiness_Report)
+
+#colnames(Happiness_Report)[3] <- "Happiness Level"
+
+Geo <- gvisGeoChart(Happiness_Report, locationvar='Country.name', colorvar='Ladder.score',
+        options=list(colors="['#FF4500', '#ffff00']", height=700, width=800))
+
+plot(Geo)
+
+```
+* **Regions like the Middle East were not as happy whereas regions like North America was**
+* When highlighting over specific countries, it shows their average happiness level - the closer they are to 10, the happier they are
+* We created this graph because our previous graph was grouping countries into regions. This map allows us to see each individual country
+
+#### Initial Numerical Summary
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+Happiness_Report %>% 
+     filter(Ladder.score > 5) %>%
+     summarise(happier_support_avg = mean(Social.support))
+Happiness_Report %>% 
+     filter(Ladder.score < 5) %>%
+     summarise(less_happier_support_avg = mean(Social.support))
+```
+* Our initial assumption was that social support would have an impact on the happiness level of each country/region
+* We tested this theory by splitting the data into those observations that had a higher ladder score and those that had a lower ladder score and summarized the social support rating for each section
+* **We found that the happier countries had a higher social support rating, on average, which supported our initial beliefs**
+* We used this numerical summary as a starting point for our single decision tree to see if we would get the same conclusion
+
+#### Scatterplot with life expectancy
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(Happiness_Report, aes(x = Healthy.life.expectancy, 
+                             y = Ladder.score, color = Regional.indicator)) +
+        geom_point() +
+        xlim(45, 80) +
+        labs(color = "Region") +
+        labs(title = "Happiness Level Based on the Life Expectancy 
+             For Each Region",
+             y = "Happiness Level", x = "Life Expectancy") +
+     theme(plot.title=element_text(face="bold", size=13), 
+              axis.title.y=element_text(size=10), 
+              axis.title.x=element_text(size=10)) 
+```
+
+* **The scatterplot shows that as the life expectancy increases, the happiness level also increases**
+* Our previous boxplot showed that regions like Sub-Saharan Africa are among the lowest rating of happiness level, and our outside research showed that the life expectancy of this region is among the lowest as well
+* Due to this, we deemed the life expectancy variable as another important indicator of the happiness level variable
+
+#### GDP barplot
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(Happiness_Report, aes(x = Regional.indicator, y = Logged.GDP.per.capita)) +
+        stat_summary(fun.y=mean, geom="bar") +
+        theme(axis.text.x = element_text(angle = 90)) +
+        labs(title = "Average GDP Per Capita Based on Region", 
+             x = "Region", y = "Average GDP Per Capita") +
+        theme(plot.title=element_text(face="bold", size=13), 
+              axis.title.y=element_text(size=10), 
+              axis.title.x=element_text(size=10)) 
+```
+
+* **This graph shows that a higher GDP in a certain region leads to a higher happiness level**
+* We deemed it to be another possible important indicator of happiness
+
+#### Box plot of generosity
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+ggplot(Happiness_Report, aes(x = Regional.indicator, y = Generosity)) +
+        stat_summary(fun.y=mean, geom="bar") +
+        theme(axis.text.x = element_text(angle = 90)) +
+        labs(title = "Average Level of Generosity Based on Region", 
+             x = "Region", y = "Average Generosity Level") +
+        theme(plot.title=element_text(face="bold", size=13), 
+              axis.title.y=element_text(size=10), 
+              axis.title.x=element_text(size=10)) 
+```
+
+* We made this plot because we were unsure if geneorsity had an impact on the happiness level
+* **Although the generosity plot reinforces our initial conclusions with the level of happiness in North America/ANZ, it contradicts the resuts we see in Southeast Asia and Central/Eastern Europe given that the results of both graphs are inverse of one another**
+
+### Methods
+
+#### Technique chosen
+* In addition to the preliminary exploratory data analysis conducted, we are using a single decision tree to gain more insight into what factors are the most important to the happiness level
+* We decided to use this method because it uses a white box model
+     * If a given situation is observable in the model (the variable highly predicts the happiness level), the explanation for the condition is easily explained by boolean logic
+* While at first we were aiming to use the Random Forest method, as the multiple simultaneous decision trees reduce the likelihood of over or undervaluing the importance of a particular factor, our dataset of 153 countries is too small of a sample to create an effective random forest model     
+     
+#### Advantages of using a single decision tree
+* It will be simple to understand and interpret through visualization 
+* It will be fairly straightforward to evaluate and understand the reliability of the model comparing the sensitivity and specificity from the confusion matrix
+
+#### Procedure
+* In creating a single decision tree model to determine the most important variables of happiness, we decided to split countries into one of 3 classes by their Gallup World Poll happiness ladder score, with the bottom third of all scores in the population being classified as ‘Low’, the highest third as ‘High’ and the remaining countries as ‘Medium’
+* As a side effect of classifying countries in this manner, the base rates for all 3 classes must be 33.3%, and therefore are all represented equally in the dataset
+* The dataset was divided into a training and testing set, containing 75% and 25% of the initial dataset, respectively
+* An initial decision tree was generated using the gini coefficient to determine the optimal number of splits in the decision tree.
+* Before referencing any detailed evaluation metrics, the tree looks to be fairly accurate in the majority of its leaves, save for the 2nd from the right
+* The variable hierarchy too seems to be fairly in line with our initial research, with the most important variable in classifying based on happiness ladder score being social support (our data’s representation of average citizens's close social network, fulfilling a very similar role as family), followed by GDP per capita
+* Our initial model does not use healthy life expectancy at all to classify countries by happiness, which is at odds with our research, but overall there is still a fair degree of agreement
+
+```{r, echo = FALSE}
+# Dataset cleaning
+
+Happiness_Report <- read.csv("WHR20_DataForFigure2.1.csv")
+
+Happiness_Report <- Happiness_Report %>% 
+     select(Country.name, Regional.indicator, Ladder.score, Logged.GDP.per.capita, 
+            Social.support, Healthy.life.expectancy, Freedom.to.make.life.choices, 
+            Generosity, Perceptions.of.corruption)
+```
+
+
+```{r, echo = FALSE}
+#Divide up scores into lower, middle and upper third
+lowthird = quantile(Happiness_Report$Ladder.score, .33)
+upthird = quantile(Happiness_Report$Ladder.score, .67)
+
+
+#Create categorical response variable
+ladder_group = c(rep(0, length(Happiness_Report$Ladder.score)))
+ladder_group[(Happiness_Report$Ladder.score >= lowthird) & (Happiness_Report$Ladder.score <= upthird)] = 1
+ladder_group[(Happiness_Report$Ladder.score > upthird)] = 2
+Happiness_Report$ladder_group = factor(as.integer(ladder_group), labels = c('Low', 'Medium', 'High'))
+Happiness_Report = Happiness_Report[-3]
+
+```
+
+```{r, echo = FALSE}
+#Base rate calculations
+
+baseRateL = length(Happiness_Report$ladder_group[Happiness_Report$ladder_group == 'Low']) / length(Happiness_Report$ladder_group)
+
+baseRateM = length(Happiness_Report$ladder_group[Happiness_Report$ladder_group == 'Medium']) / length(Happiness_Report$ladder_group)
+
+baseRateH = length(Happiness_Report$ladder_group[Happiness_Report$ladder_group == 'High']) / length(Happiness_Report$ladder_group)
+
+paste("Low Ladder Score Base Rate:", baseRateL)
+paste("Medium Ladder Score Base Rate:", baseRateM)
+paste("High Ladder Score Base Rate:", baseRateH)
+```
+
+```{r, echo = FALSE}
+# Build test and training sets
+#happiness_factors = as.data.frame(apply(Happiness_Report,                 #<- the data set to apply the function to
+#                          2,                         #<- for each column
+#                          function(x) as.factor(x)))
+sample_rows = 1:nrow(Happiness_Report)
+
+set.seed(2020) #sample(x, size, replace = FALSE, prob = NULL)
+test_rows = sample(sample_rows,
+                   dim(Happiness_Report)[1]*.25, #start with 10% of our dataset, could do 20%
+                   # but random forest does require more training data because of the 
+                   # sampling so 90% might be a better approach with this small of a dataset
+                   replace = FALSE)# We don't want duplicate samples
+
+happiness_train1 = Happiness_Report[,-1][-test_rows,]
+#happiness_train1 = happiness_train1[,-1]
+happiness_test1 = Happiness_Report[,-1][test_rows,]
+#happiness_test1 = happiness_test1[,-1]
+
+
+#census_train$income = factor(census_train$income)
+#census_test$income = factor(census_test$income)
+
+
+```
+
+
+```{r, echo = FALSE}
+happiness_train1 = as_tibble(happiness_train1)
+set.seed(2021)
+happiness_tree_gini= rpart(ladder_group~.,  #<- formula, response variable ~ predictors
+                           #   "." means "use all other variables in data"
+                            method = "class",#<- specify method, use "class" for tree
+                            parms = list(split = "gini"),#<- method for choosing tree split
+                            data = happiness_train1,#<- data used
+                            control = rpart.control(cp=.01))
+```
+
+```{r, include = FALSE}
+#View(happiness_tree_gini$frame)
+# Only variables that are used are GDP per capita. social score and freedom to make life choices
+```
+
+```{r, echo = FALSE}
+#Plot results
+
+rpart.plot(happiness_tree_gini, type =4, extra = 101)
+```
+
+Before referencing any detailed evaluation metrics, the tree looks to be fairly accurate in the majority of its leaves, save for the 2nd from the right. In addition, the variable hierarchy too seems to be fairly in line with our initial research, with the most important variable in classifying based on happiness ladder score being social support (our data’s representation of average citizens's close social network, fulfilling a very similar role as family), followed by GDP per capita. Our initial model does not use healthy life expectancy at all to classify countries by happiness, which is at odds with our research, but overall there is still a fair degree of agreement.  
+
+
+### Evaluation of the Model
+
+#### Evaluation of Initial Model {.tabset}
+
+The primary of the model is overfitting - it has a high number of splits for its training set of 115 data points, and two of the leaves contain less than 10% of the initial data. To determine if overfitting is present, the confusion matrix of the training set and test set for the same model can be compared (below)
+
+##### Predict according to training set
+```{r, echo = FALSE}
+#Predict according to training set
+
+happiness_fitted_model_train = predict(happiness_tree_gini, type= "class")
+
+#uses the test set
+happiness_fitted_model_test = predict(happiness_tree_gini,
+                                     happiness_test1,
+                                     type = "class",
+                                     predict.all = TRUE)
+
+```
+
+
+```{r, echo = FALSE, include = FALSE}
+happiness_conf_matrix = table(happiness_fitted_model_test, happiness_test1$ladder_group)
+
+```
+
+```{r, echo = FALSE}
+library(caret)
+paste("Training Dataset Confusion Matrix")
+confusionMatrix(as.factor(happiness_fitted_model_train), as.factor(happiness_train1$ladder_group), positive = "POSITIVE", dnn=c("Prediction", "Actual"), mode = "sens_spec")
+```
+
+Given that the dataset is evenly distributed between each of the three classes, the most important variables in the confusion matrix to focus on are the sensitivity, specificity and balanced accuracy. Balanced accuracy is a good measure of model accuracy considering both type I and type II error when different classes occur with similar frequency. The goal for our model is to be as representative as possible, as it is more for information representation than meant to aid in decision-making, so we value type I and type II errors at the same cost and thus value sensitivity and specificity evenly. Looking at the confusion matrix for the training set, the balanced accuracies for low, medium, and high classifications are 0.9408, 0.7878 and 0.8917, respectively. Although noticeably weaker when classifying countries in the medium third of Gallup World Poll happiness ladder scores, the model seems to have a fair degree of accuracy across all 3 classes, and is very strong in predicting countries with low or high ladder stores. Sensitivity is notably lower than specificity for countries classified as having medium or high ladder scores, while the low class has a notably greater specificity than sensitivity. Due to the fact that these classifications are hierarchical, it can be concluded that the model overestimates a country’s happiness across the board, particularly when it has a low ladder score.
+
+##### Test dataset Confusion Matrix
+```{r, echo = FALSE}
+paste("Test dataset Confusion Matrix")
+confusionMatrix(as.factor(happiness_fitted_model_test), as.factor(happiness_test1$ladder_group), positive = "POSITIVE", dnn=c("Prediction", "Actual"), mode = "sens_spec")
+
+#paste("Base rate of low ladder score:", baseRateL)
+#paste("Base rate of medium ladder score:", baseRateM)
+#paste("Base rate of high ladder score:", baseRateH)
+```
+
+Looking at the confusion matrix for the test set, we see the relationship between sensitivity and specificity for each class has the same relationship as with the test set, however the balanced accuracy of all 3 classes is notably lower than with the test set, particularly for countries in the middle third of ladder scores. This lower accuracy implies the model may be overfitting its training set, which not only means that the model itself is not necessarily viable, but that its determined variable importance to classifying happiness scores may be due to overfitting as well. 
+To reduce the overfitting present in the model, the number of splits can be reduced. By comparing the number of splits to the x-value relative error, the optimal number of splits for the model can be determined.
+
+#### Changing Number of Splits
+
+```{r, echo = FALSE, warning = FALSE}
+plotcp(happiness_tree_gini, uppper = "splits")
+# 2 Splits optimal
+
+cptable_ex <- as_tibble(happiness_tree_gini$cptable, )
+cptable_ex$opt <- cptable_ex$`rel error` + cptable_ex$xstd
+
+#cptable_ex
+
+
+```
+
+In the graph above, the dotted line represents one standard error above the minimum cross validated error, which is the threshold used to select the optimal number of splits in the decision tree. We can see that this threshold is crossed at cp = 3, meaning that 3 is the optimal number of splits for the model, and a new model was made accordingly.
+
+```{r, echo = FALSE}
+happiness_tree_twosplit = rpart(ladder_group~.,  #<- formula, response variable ~ predictors
+                           #   "." means "use all other variables in data"
+                            method = "class",#<- specify method, use "class" for tree
+                            parms = list(split = "gini"),#<- method for choosing tree split
+                            data = happiness_train1,#<- data used
+                            control = rpart.control(minsplit = 3, maxdepth = 2))
+rpart.plot(happiness_tree_twosplit, type =4, extra = 101)
+```
+
+Although the lower number of splits is usually good for reducing overfitting, one of the leaves has only one value of the training set in it - very much a warning sign of the existence of overfitting.
+
+#### Evaluation of Reduced Splits Model {.tabset}
+
+##### Training Dataset Confusion Matrix
+```{r, echo = FALSE}
+
+happiness_fitted_model_twosplit_train = predict(happiness_tree_twosplit, type= "class")
+
+#uses the test set
+happiness_fitted_model_twosplit_test = predict(happiness_tree_twosplit,
+                                     happiness_test1,
+                                     type = "class",
+                                     predict.all = TRUE)
+
+
+
+paste("Training Dataset Confusion Matrix")
+confusionMatrix(as.factor(happiness_fitted_model_twosplit_train), as.factor(happiness_train1$ladder_group), positive = "POSITIVE", dnn=c("Prediction", "Actual"), mode = "sens_spec")
+```
+
+Comparing the balanced accuracy for the test set against the training set, it is clear there is still a high degree of overfitting in the model, as the balanced accuracy drops an average of .1 across all 3 classes between the training set and test set, which, although large, is still less than the initial model. Judging off of the model’s performance with the training set, it is fairly accurate with countries in the ‘low’ and ‘high’ categories for ladder score, although it struggles a bit more correctly classifying countries with ‘medium’ ladder scores.
+
+##### Testing Dataset Confusion Matrix
+
+```{r, echo = FALSE}
+paste("Test dataset Confusion Matrix")
+confusionMatrix(as.factor(happiness_fitted_model_twosplit_test), as.factor(happiness_test1$ladder_group), positive = "POSITIVE", dnn=c("Prediction", "Actual"), mode = "sens_spec")
+
+#paste("Base rate of low ladder score:", baseRateL)
+#paste("Base rate of medium ladder score:", baseRateM)
+#paste("Base rate of high ladder score:", baseRateH)
+```
+
+Comparing the balanced accuracy for the test set against the training set, it is clear there is still a high degree of overfitting in the model, as the balanced accuracy drops an average of .1 across all 3 classes between the training set and test set, which, although large, is still less than the initial model. Judging off of the model’s performance with the training set, it is fairly accurate with countries in the ‘low’ and ‘high’ categories for ladder score, although it struggles a bit more correctly classifying countries with ‘medium’ ladder scores.
+
+#### Final Evaluations
+```{r, echo = FALSE}
+plotcp(happiness_tree_gini)
+
+cptable_ex_cp <- as.data.frame(happiness_tree_gini$cptable, )
+cptable_ex_cp$opt <- cptable_ex_cp$`rel error`+ cptable_ex_cp$xstd
+
+#cptable_ex_cp
+
+#Optimal splits still 2, good model
+```
+
+The optimal number of splits is still 3, which did not change from the previous model. This fact, combined with the lessened overfitting and only somewhat lower balanced accuracies, result in the 3-split model being the more appropriate model to aid in the answering of our question. The more representative nature of the model means that its assessment of variables of importance should be more closely related to the variables with the strongest impact on happiness.
+
+```{r, echo = FALSE}
+#Variable complexity
+happiness_tree_twosplit$frame[,c(1,6)]
+```
+
+From the table of model variables and associated complexity, it can be seen that for the final classification model, the 2 variables chosen to classify countries based on happiness ladder score are, in order of importance, social support and GDP per capita. 
+
+### Conclusions
+
+The variable importance of the final model is in line with our initial research on the question, as discussed earlier, although does not take into account public health/life expectancy. It is possible this is not because the model deemed this an unimportant variable, but that either it’s complexity was too low to be chosen for the 3 split model, or that it is highly correlated with social support or GDP per capita, and thus not as useful at predicting happiness ladder scores as it would be on its own. Looking at the correlation plot in the preliminary analysis, it can be seen that healthy life expectancy is highly correlated with both of these variables. This serves as a reminder that variable importance in a decision tree, although useful in determining the variable’s overall importance in predicting a variable of interest, is not the exact same and correlation with existing predictors, as well as possible cross relationships, must be kept in mind when making conclusions about the overall quality of a variable as a predictor. Both GDP per capita and social support are supported by existing research, and our preliminary analysis showed that both variables on their own have a high degree of correlation with Gallop happiness ladder score, we can conclude that these factors have a strong relationship with average national happiness. We also cannot conclude that healthy life expectancy does not have a strong relationship, because as discussed above, the high correlation with the model’s two chosen predictors may have lessened its predictive value in the particular decision tree and may not be representative of its predictive value, and therefore the strength of its relationship with average national happiness, overall.
+
+
+### Future work
+
+#### Limitations
+
+As previously discussed, a limitation to our analysis on this project was not being able to use an ensemble method like we had previously wanted to. While at first we were aiming to use the Random Forest method, as the multiple simultaneous decision trees reduce the likelihood of over or undervaluing the importance of a particular factor, our dataset of 153 countries is too small of a sample to create an effective random forest model. A second limitation is that the dataset doesn’t include information about all the countries. This dataset only has 153 countries, so it might not be completely representative of global happiness. Furthermore, the dataset has imputed missing values due to the Coronavirus pandemic. In some countries, there were missing values for the perception of corruption, so the authors used estimates from a model that regresses Gallup World Poll’s perception of corruption on WGI’s control of corruption. In some cases, countries are missing one or more of the happiness factors, so the authors used the most recent information from previous Gallup World Polls to substitute the missing information. Imputing the missing values can lead to inaccurate representations of the happiness factors for a country because using past information is not accurate to how the country has developed in 2020, which is another factor that limited our analysis. Future work to resolve this issue could be to re-run the existing model once Gallop is able to collect more current information, such as when the year is officially over. Another way to resolve this problem could be to analyze Gallop’s estimation models for corruption and happiness ladder scores and discuss possible biases in these that could lead to biases in the results of our analysis. This would allow us to make more concrete conclusions by taking into account the biases that might exist. 
+
+#### Future Analysis
+
+Additional analysis that could be done with this project is finding a different method to see if life expectancy has an influence on the happiness level since that’s what our previous research indicated but not what the single decision tree resulted in. This would allow us to have a more representative view on the value of each variable in predicting average national happiness rather than relying on individual variable analysis and a single decision tree. Another future analysis method could be to find a way to break down countries into states/provinces for more detailed information and more data points, which would also allow us to use an ensemble method like Random Forest as we had initially wanted to.
+
+### References
+1. <https://happiness-report.s3.amazonaws.com/2020/WHR20_Ch2_Statistical_Appendix.pdf>
+2. <https://www.kaggle.com/londeen/world-happiness-report-2020>
+3. <https://www.kaggle.com/koki25ando/data-analysis-of-world-happiness-report>
+4. <https://github.com/nateofspades/The-World-Happiness-Report-An-Exploratory-Data-Analysis-Project>
+
+```{r resetOptions, echo=FALSE}
+## Set options back to original options
+options(op)
+```
+
+
